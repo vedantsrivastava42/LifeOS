@@ -25,6 +25,8 @@ export const XP_BASE = {
   tick: 10,
   /** Completing a milestone / checklist item. */
   milestoneItem: 50,
+  /** Completing one daily task (kept modest since you do several a day). */
+  dailyTask: 8,
   /** Doing a scheduled contest. */
   contest: 30,
   /** A plain note with no items attached. */
@@ -54,8 +56,8 @@ export const STREAK_BONUS = {
  * Anti-anxiety streak mechanics. See lib/domain/streak.ts for how these apply.
  */
 export const STREAK_RULES = {
-  /** Earn 1 freeze for every N consecutive active days. */
-  freezeEveryNDays: 5,
+  /** Earn 1 freeze for every N consecutive active days (one full week). */
+  freezeEveryNDays: 7,
   /** Hard cap on stored freezes if a quest's config doesn't specify one. */
   defaultFreezesMax: 3,
   /** Default initial freeze grant for a new streak quest. */
@@ -75,11 +77,13 @@ export const STREAK_RULES = {
 
 /**
  * Levels are a global, cosmetic layer over total lifetime XP — a quiet sense of
- * overall progress. Level L begins at `base · L^exp` cumulative XP.
+ * overall progress. Each level costs a bit more than the last (clean, linear
+ * growth): going from level L→L+1 costs `base + step·(L-1)` XP.
+ *   base 100, step 50 → 100, 150, 200, 250 … (cumulative 100, 250, 450, 700 …)
  */
 export const LEVELS = {
-  base: 120,
-  exp: 1.6,
+  base: 100, // XP for level 1 → 2
+  step: 50, // each subsequent level costs this much more than the previous
 } as const;
 
 export type Difficulty = "easy" | "medium" | "hard";

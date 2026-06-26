@@ -44,6 +44,12 @@ const TYPES: {
     blurb: "A one-off checklist. Settle into a new city, ship a project.",
     icon: "🪜",
   },
+  {
+    type: "daily",
+    title: "Daily Task",
+    blurb: "A recurring checklist that resets every day. Tag tasks by category.",
+    icon: "🔁",
+  },
 ];
 
 export default function NewQuestPage() {
@@ -118,9 +124,17 @@ export default function NewQuestPage() {
   const [restDays, setRestDays] = useState<number[]>([]);
   const [freezesMax, setFreezesMax] = useState(3);
   const [freezesStart, setFreezesStart] = useState(1);
+  const [tickXp, setTickXp] = useState("");
 
-  // milestone
-  const [milestoneItems, setMilestoneItems] = useState<string[]>([""]);
+  // milestone: each step has a label + optional XP override.
+  const [milestoneItems, setMilestoneItems] = useState<
+    { label: string; xp: string }[]
+  >([{ label: "", xp: "" }]);
+
+  // daily: recurring tasks with optional per-task category + XP.
+  const [dailyItems, setDailyItems] = useState<
+    { label: string; categoryId: string; xp: string }[]
+  >([{ label: "", categoryId: "", xp: "" }]);
 
   const categories = cats.data?.categories ?? [];
   const effectiveEnd = openEnded ? null : endDate || null;
@@ -144,8 +158,8 @@ export default function NewQuestPage() {
   const canSubmit =
     name.trim().length > 0 &&
     !!categoryId &&
-    (type !== "milestone" ||
-      milestoneItems.some((i) => i.trim().length > 0));
+    (type !== "milestone" || milestoneItems.some((i) => i.label.trim())) &&
+    (type !== "daily" || dailyItems.some((i) => i.label.trim()));
 
   async function submit() {
     if (!canSubmit) return;
@@ -187,11 +201,23 @@ export default function NewQuestPage() {
         rest_days: restDays,
         freezes_max: freezesMax,
         freezes_available: freezesStart,
+        tick_xp: tickXp.trim() ? Number(tickXp) : undefined,
       };
     } else if (type === "milestone") {
       input.milestone_items = milestoneItems
-        .map((i) => i.trim())
-        .filter(Boolean);
+        .filter((i) => i.label.trim())
+        .map((i) => ({
+          label: i.label.trim(),
+          xp: i.xp.trim() ? Number(i.xp) : undefined,
+        }));
+    } else if (type === "daily") {
+      input.daily_items = dailyItems
+        .filter((i) => i.label.trim())
+        .map((i) => ({
+          label: i.label.trim(),
+          category_id: i.categoryId || null,
+          xp: i.xp.trim() ? Number(i.xp) : undefined,
+        }));
     }
 
     const res = await create.mutateAsync(input);
@@ -315,7 +341,17 @@ export default function NewQuestPage() {
                 type="number"
                 min={1}
                 value={pace}
-                onChange={(e) => setPace(Number(e.target.value))}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setPace(v);
+                  // Propagate to every topic's pace (a "set all"); per-topic
+                  // tweaks below override just that one until the next change.
+                  if (v > 0) {
+                    setTopicRows((rows) =>
+                      rows.map((r) => ({ ...r, pace: v })),
+                    );
+                  }
+                }}
                 className="input"
               />
             </Field>
@@ -487,8 +523,18 @@ export default function NewQuestPage() {
               />
             </Field>
           </div>
+          <Field label="XP per day (blank = default 10)">
+            <input
+              type="number"
+              min={0}
+              value={tickXp}
+              onChange={(e) => setTickXp(e.target.value)}
+              placeholder="10"
+              className="input"
+            />
+          </Field>
           <p className="text-xs text-faint">
-            Earn a freeze every few consistent days. A missed day spends a freeze
+            Earn a freeze every 7 consistent days. A missed day spends a freeze
             instead of breaking your streak.
           </p>
         </Card>
@@ -496,19 +542,36 @@ export default function NewQuestPage() {
 
       {type === "milestone" && (
         <Card className="space-y-3">
-          <Field label="Checklist">
+          <Field label="Checklist (set XP per step — blank = default 50)">
             <div className="space-y-2">
               {milestoneItems.map((item, i) => (
                 <div key={i} className="flex gap-2">
                   <input
-                    value={item}
+                    value={item.label}
                     onChange={(e) =>
                       setMilestoneItems((prev) =>
-                        prev.map((v, idx) => (idx === i ? e.target.value : v)),
+                        prev.map((v, idx) =>
+                          idx === i ? { ...v, label: e.target.value } : v,
+                        ),
                       )
                     }
                     placeholder={`Step ${i + 1}`}
-                    className="input flex-1"
+                    className="input min-w-0 flex-1"
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    value={item.xp}
+                    onChange={(e) =>
+                      setMilestoneItems((prev) =>
+                        prev.map((v, idx) =>
+                          idx === i ? { ...v, xp: e.target.value } : v,
+                        ),
+                      )
+                    }
+                    placeholder="XP"
+                    className="input shrink-0 text-center"
+                    style={{ width: "5.5rem" }}
                   />
                   {milestoneItems.length > 1 && (
                     <button
@@ -527,11 +590,104 @@ export default function NewQuestPage() {
             </div>
           </Field>
           <button
-            onClick={() => setMilestoneItems((prev) => [...prev, ""])}
+            onClick={() =>
+              setMilestoneItems((prev) => [...prev, { label: "", xp: "" }])
+            }
             className="text-sm text-accent hover:underline"
           >
             + Add step
           </button>
+        </Card>
+      )}
+
+      {type === "daily" && (
+        <Card className="space-y-3">
+          <Field label="Daily tasks (category + XP per task — blank XP = default 8)">
+            <div className="space-y-2">
+              {dailyItems.map((item, i) => (
+                <div key={i} className="space-y-1.5 rounded-xl border border-border bg-surface-2 p-2">
+                  <div className="flex gap-2">
+                    <input
+                      value={item.label}
+                      onChange={(e) =>
+                        setDailyItems((prev) =>
+                          prev.map((v, idx) =>
+                            idx === i ? { ...v, label: e.target.value } : v,
+                          ),
+                        )
+                      }
+                      placeholder={`Task ${i + 1} — e.g. Solve 1 DSA problem`}
+                      className="input flex-1"
+                    />
+                    {dailyItems.length > 1 && (
+                      <button
+                        onClick={() =>
+                          setDailyItems((prev) =>
+                            prev.filter((_, idx) => idx !== i),
+                          )
+                        }
+                        className="rounded-lg px-3 text-faint hover:text-fg"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <select
+                      value={item.categoryId}
+                      onChange={(e) =>
+                        setDailyItems((prev) =>
+                          prev.map((v, idx) =>
+                            idx === i
+                              ? { ...v, categoryId: e.target.value }
+                              : v,
+                          ),
+                        )
+                      }
+                      className="input min-w-0 flex-1 text-sm"
+                    >
+                      <option value="">No category</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.icon} {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min={0}
+                      value={item.xp}
+                      onChange={(e) =>
+                        setDailyItems((prev) =>
+                          prev.map((v, idx) =>
+                            idx === i ? { ...v, xp: e.target.value } : v,
+                          ),
+                        )
+                      }
+                      placeholder="XP"
+                      className="input shrink-0 text-center"
+                      style={{ width: "5.5rem" }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Field>
+          <button
+            onClick={() =>
+              setDailyItems((prev) => [
+                ...prev,
+                { label: "", categoryId: "", xp: "" },
+              ])
+            }
+            className="text-sm text-accent hover:underline"
+          >
+            + Add task
+          </button>
+          <p className="text-xs text-faint">
+            These reset every day — tick them off fresh each morning. The XP
+            consecutive-day bonus still applies.
+          </p>
         </Card>
       )}
 

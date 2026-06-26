@@ -138,6 +138,13 @@ export default function QuestDetailPage() {
           <Stat label="Freezes" value={`❄️ ${q.streak.freezes}`} />
         </Card>
       )}
+      {q.type === "target" && q.streak && (
+        <Card className="grid grid-cols-3 gap-2 text-center">
+          <Stat label="Current" value={`🔥 ${q.streak.current}`} />
+          <Stat label="Longest" value={`${q.streak.longest}`} />
+          <Stat label="Freezes" value={`❄️ ${q.streak.freezes}`} />
+        </Card>
+      )}
 
       {/* Calendar */}
       <Card>
@@ -154,7 +161,7 @@ export default function QuestDetailPage() {
       )}
 
       {/* Items, grouped by topic */}
-      {q.items.length > 0 && q.type !== "milestone" && (
+      {q.items.length > 0 && q.type !== "milestone" && q.type !== "daily" && (
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getAuthed, jsonError } from "@/lib/server/auth";
 import { createQuestSchema } from "@/lib/validation/schemas";
 import type { QuestRow } from "@/lib/domain/types";
-import { createQuest, loadCategoryMap, summarizeQuest } from "@/lib/server/quests";
+import { createQuest, loadCategoryMap, summarizeQuests } from "@/lib/server/quests";
 import { readToday } from "@/lib/server/today-param";
 
 export const dynamic = "force-dynamic";
@@ -23,22 +23,11 @@ export async function GET(req: NextRequest) {
   if (status !== "all") query = query.eq("status", status);
   if (categoryId) query = query.eq("category_id", categoryId);
 
-  const { data } = await query;
+  // Quests list + category map are independent → fetch in parallel.
+  const [{ data }, catMap] = await Promise.all([query, loadCategoryMap(supabase)]);
   const quests = (data ?? []) as QuestRow[];
-  const catMap = await loadCategoryMap(supabase);
 
-  const summaries = await Promise.all(
-    quests.map(async (q) => {
-      const { summary } = await summarizeQuest(
-        supabase,
-        q,
-        catMap.get(q.category_id ?? "") ?? null,
-        today,
-      );
-      return summary;
-    }),
-  );
-
+  const summaries = await summarizeQuests(supabase, quests, catMap, today);
   return NextResponse.json({ quests: summaries });
 }
 

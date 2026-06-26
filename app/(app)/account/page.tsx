@@ -1,10 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToday } from "@/lib/query/hooks";
 import { Button, Card } from "@/components/ui";
+import { Badges } from "@/components/Badges";
+import { rankForLevel, nextRank } from "@/lib/domain/badges";
 
 export default function AccountPage() {
   const router = useRouter();
@@ -24,6 +27,8 @@ export default function AccountPage() {
   }
 
   const level = data?.level;
+  const rank = level ? rankForLevel(level.level) : null;
+  const upcoming = level ? nextRank(level.level) : null;
 
   return (
     <div className="space-y-6">
@@ -40,6 +45,14 @@ export default function AccountPage() {
                 Level
               </div>
               <div className="text-3xl font-bold text-gold">{level.level}</div>
+              {rank && (
+                <div
+                  className="mt-0.5 text-sm font-bold"
+                  style={{ color: rank.color }}
+                >
+                  {rank.icon} {rank.name}
+                </div>
+              )}
             </div>
             <div className="text-right">
               <div className="text-xs uppercase tracking-wider text-faint">
@@ -58,9 +71,32 @@ export default function AccountPage() {
           </div>
           <p className="mt-2 text-xs text-muted">
             {level.toNext} XP to level {level.level + 1}
+            {upcoming && (
+              <>
+                {" · next rank "}
+                <span
+                  className="font-semibold"
+                  style={{ color: upcoming.color }}
+                >
+                  {upcoming.name}
+                </span>{" "}
+                at L{upcoming.level}
+              </>
+            )}
           </p>
         </Card>
       )}
+
+      <Link href="/insights" className="block">
+        <Card className="flex items-center justify-between transition hover:border-accent/40">
+          <span className="flex items-center gap-2 font-semibold text-fg">
+            <span className="text-lg">📊</span> Insights
+          </span>
+          <span className="text-sm text-accent">View →</span>
+        </Card>
+      </Link>
+
+      <Badges />
 
       <Button variant="danger" onClick={signOut} className="w-full">
         Sign out

@@ -22,7 +22,7 @@ export const createQuestSchema = z
   .object({
     name: z.string().min(1).max(120),
     category_id: uuidish,
-    type: z.enum(["streak", "target", "milestone"]),
+    type: z.enum(["streak", "target", "milestone", "daily"]),
     start_date: dateStr,
     end_date: dateStr.nullable().optional(),
     sheet_id: uuidish.nullable().optional(),
@@ -66,11 +66,31 @@ export const createQuestSchema = z
         rest_days: z.array(z.number().int().min(0).max(6)).default([]),
         freezes_max: z.number().int().min(0).max(10).default(3),
         freezes_available: z.number().int().min(0).max(10).default(1),
+        tick_xp: z.number().int().min(0).max(100000).optional(),
       })
       .optional(),
 
-    // milestone-specific
-    milestone_items: z.array(z.string().min(1).max(200)).optional(),
+    // milestone-specific: each step can carry its own XP reward.
+    milestone_items: z
+      .array(
+        z.object({
+          label: z.string().min(1).max(200),
+          xp: z.number().int().min(0).max(100000).optional(),
+        }),
+      )
+      .optional(),
+
+    // daily-specific: recurring tasks, each with optional category + XP.
+    daily_items: z
+      .array(
+        z.object({
+          label: z.string().min(1).max(200),
+          category_id: uuidish.nullable().optional(),
+          xp: z.number().int().min(0).max(100000).optional(),
+          difficulty: difficulty.nullable().optional(),
+        }),
+      )
+      .optional(),
   })
   .superRefine((v, ctx) => {
     if (v.type === "target" && !v.target) {
@@ -78,6 +98,20 @@ export const createQuestSchema = z
         code: z.ZodIssueCode.custom,
         path: ["target"],
         message: "Target quests need a target_count and pace_per_week",
+      });
+    }
+    if (v.type === "daily" && !v.daily_items?.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["daily_items"],
+        message: "A daily quest needs at least one task",
+      });
+    }
+    if (v.type === "milestone" && !v.milestone_items?.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["milestone_items"],
+        message: "A milestone needs at least one step",
       });
     }
     if (v.end_date && v.end_date < v.start_date) {

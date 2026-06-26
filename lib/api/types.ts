@@ -49,8 +49,10 @@ export interface QuestSummary {
   progress?: TargetProgressView;
   /** Items relevant to "today": contests due today, undone checklist, etc. */
   due_today: QuestItemRow[];
-  /** For milestone: all checklist items. */
+  /** For milestone & daily: all checklist/task items. */
   checklist?: QuestItemRow[];
+  /** Quest item ids logged today (drives "done today" for daily tasks). */
+  today_item_ids: string[];
   open_items: number; // count of not-yet-done items
 }
 
@@ -124,4 +126,54 @@ export interface ArchiveEntry {
   quest: QuestSummary;
   stats: ArchiveStats;
   has_retrospective: boolean;
+}
+
+// ── Insights ──────────────────────────────────────────────────────────────
+export interface XpWindows {
+  day: number; // last 1 day (today)
+  week: number; // last 7 days
+  month: number; // last 30 days
+  year: number; // last 365 days
+}
+
+export interface XpComparison {
+  this_week: number;
+  last_week: number;
+  this_month: number;
+  last_month: number;
+}
+
+export interface XpBucket {
+  label: string; // e.g. "Mon 23" or "Jun"
+  start: string; // yyyy-MM-dd (week) or yyyy-MM (month)
+  xp: number;
+}
+
+export interface ActivityEntry {
+  quest: string;
+  icon: string | null;
+  color: string | null;
+  items: string[]; // labels of things done
+  note: string | null;
+  xp: number;
+}
+
+export interface ActivityDay {
+  date: string; // yyyy-MM-dd
+  xp: number;
+  entries: ActivityEntry[];
+}
+
+export interface InsightsResponse {
+  windows: XpWindows;
+  comparison: XpComparison;
+  weekly: XpBucket[]; // last 8 calendar weeks (oldest → newest)
+  monthly: XpBucket[]; // last 12 calendar months (oldest → newest)
+  activity: ActivityDay[]; // recent days (newest → oldest)
+}
+
+export interface MonthInsightsResponse {
+  month: string; // yyyy-MM
+  total: number;
+  days: ActivityDay[]; // every active day in the month (newest → oldest)
 }

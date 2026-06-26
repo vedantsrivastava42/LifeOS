@@ -10,16 +10,14 @@ export async function GET() {
   if (res) return res;
   const { supabase } = ctx;
 
-  const { data: cats } = await supabase
-    .from("categories")
-    .select("*")
-    .order("is_preset", { ascending: false })
-    .order("name", { ascending: true });
-
-  const { data: activeQuests } = await supabase
-    .from("quests")
-    .select("category_id")
-    .eq("status", "active");
+  const [{ data: cats }, { data: activeQuests }] = await Promise.all([
+    supabase
+      .from("categories")
+      .select("*")
+      .order("is_preset", { ascending: false })
+      .order("name", { ascending: true }),
+    supabase.from("quests").select("category_id").eq("status", "active"),
+  ]);
   const counts = new Map<string, number>();
   for (const q of activeQuests ?? []) {
     const id = q.category_id as string | null;

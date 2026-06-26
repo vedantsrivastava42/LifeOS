@@ -17,6 +17,8 @@ export interface ScorableItem {
   kind: QuestItemKind;
   difficulty?: Difficulty | null;
   label?: string;
+  /** Per-item XP override (checklist/daily). Wins over kind/difficulty. */
+  xpOverride?: number | null;
 }
 
 export interface XpEventDraft {
@@ -28,7 +30,10 @@ export interface XpEventDraft {
 
 /** Base XP for one item, before multipliers. */
 export function baseForItem(item: ScorableItem): number {
+  // An explicit per-item value always wins (set on milestone/daily items).
+  if (item.xpOverride != null && item.xpOverride >= 0) return item.xpOverride;
   if (item.kind === "contest") return XP_BASE.contest;
+  if (item.kind === "daily") return XP_BASE.dailyTask;
   if (item.kind === "checklist") return XP_BASE.milestoneItem;
   if (item.difficulty === "easy") return XP_BASE.easy;
   if (item.difficulty === "medium") return XP_BASE.medium;
@@ -88,9 +93,11 @@ export function scoreItems(
   return { events, total: events.reduce((s, e) => s + e.amount, 0) };
 }
 
-/** Score a single daily tick on a streak quest. */
-export function scoreTick(currentStreak: number): XpEventDraft {
-  const base = XP_BASE.tick;
+/** Score a single daily tick on a streak quest (optional custom base XP). */
+export function scoreTick(
+  currentStreak: number,
+  base: number = XP_BASE.tick,
+): XpEventDraft {
   const streakMult = streakBonusMultiplier(currentStreak);
   const amount = Math.max(1, Math.round(base * streakMult));
   return {
@@ -113,10 +120,15 @@ export function scoreNote(): XpEventDraft {
 
 // ── Levels (cosmetic, global) ─────────────────────────────────────────────
 
-/** Cumulative XP required to *reach* the start of a given level (level ≥ 1). */
+/**
+ * Cumulative XP required to *reach* the start of a given level (level ≥ 1).
+ * Level k→k+1 costs `base + step·(k-1)`, so reaching level L is the sum:
+ *   Σ_{k=0}^{n-1} (base + step·k) = base·n + step·n·(n-1)/2,  where n = L-1.
+ */
 export function xpForLevelStart(level: number): number {
   if (level <= 1) return 0;
-  return Math.round(LEVELS.base * Math.pow(level - 1, LEVELS.exp));
+  const n = level - 1; // fully completed levels
+  return LEVELS.base * n + (LEVELS.step * n * (n - 1)) / 2;
 }
 
 export interface LevelInfo {

@@ -4,9 +4,14 @@
  */
 
 export type Difficulty = "easy" | "medium" | "hard";
-export type QuestType = "streak" | "target" | "milestone";
+export type QuestType = "streak" | "target" | "milestone" | "daily";
 export type QuestStatus = "active" | "completed" | "archived";
-export type QuestItemKind = "problem" | "contest" | "checklist" | "custom";
+export type QuestItemKind =
+  | "problem"
+  | "contest"
+  | "checklist"
+  | "custom"
+  | "daily";
 export type DayLogKind = "tick" | "items" | "note";
 export type SheetSource =
   | "striver"
@@ -83,6 +88,8 @@ export interface StreakConfig {
   /** Live/initial freeze count (the live value is recomputed server-side). */
   freezes_available: number;
   freezes_max: number;
+  /** Custom XP for one daily tick; null/undefined = default. */
+  tick_xp?: number;
 }
 export type MilestoneConfig = Record<string, unknown>;
 export type QuestConfig = TargetConfig | StreakConfig | MilestoneConfig;
@@ -116,6 +123,10 @@ export interface QuestItemRow {
   is_done: boolean;
   done_at: string | null;
   kind: QuestItemKind;
+  /** Custom XP for this item (checklist/daily); null = use the default. */
+  xp_value: number | null;
+  /** Per-task category (used by Daily tasks for filtering); null = inherit. */
+  category_id: string | null;
   order_index: number;
   created_at: string;
   updated_at: string;

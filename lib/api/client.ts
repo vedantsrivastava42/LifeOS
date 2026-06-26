@@ -9,10 +9,13 @@ import type {
   RescheduleInput,
 } from "@/lib/validation/schemas";
 import type { SheetItemRow, SheetRow } from "@/lib/domain/types";
+import type { BadgeStats, BadgeStatus } from "@/lib/domain/badges";
 import type {
   ArchiveEntry,
   CalendarResponse,
   CategoryView,
+  InsightsResponse,
+  MonthInsightsResponse,
   LogResult,
   QuestDetail,
   QuestSummary,
@@ -103,4 +106,13 @@ export const api = {
 
   archive: (today: string) =>
     req<{ entries: ArchiveEntry[] }>(`/api/archive?today=${today}`),
+
+  badges: () =>
+    req<{ badges: BadgeStatus[]; stats: BadgeStats }>(`/api/badges`),
+
+  insights: (today: string) =>
+    req<InsightsResponse>(`/api/insights?today=${today}`),
+
+  monthInsights: (month: string) =>
+    req<MonthInsightsResponse>(`/api/insights/month?month=${month}`),
 };

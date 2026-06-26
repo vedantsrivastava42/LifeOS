@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useLogDay, useQuest } from "@/lib/query/hooks";
+import { useCategories, useLogDay, useQuest } from "@/lib/query/hooks";
 import { useDelight } from "@/components/Delight";
 import { Card, Pill } from "@/components/ui";
 import { ProgressRing } from "@/components/ProgressRing";
@@ -70,6 +70,7 @@ function CardHeader({ s }: { s: QuestSummary }) {
 export function QuestCard({ s }: { s: QuestSummary }) {
   if (s.type === "streak") return <StreakCard s={s} />;
   if (s.type === "milestone") return <MilestoneCard s={s} />;
+  if (s.type === "daily") return <DailyCard s={s} />;
   return <TargetCard s={s} />;
 }
 
@@ -188,6 +189,131 @@ function MilestoneCard({ s }: { s: QuestSummary }) {
   );
 }
 
+// ── Daily ─────────────────────────────────────────────────────────────────
+function FilterChip({
+  on,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+        on
+          ? "gradient-accent text-on-accent"
+          : "bg-surface-2 text-muted hover:text-fg"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function DailyCard({ s }: { s: QuestSummary }) {
+  const log = useLogDay(s.id);
+  const celebrate = useCelebrate();
+  const cats = useCategories();
+  const [filter, setFilter] = useState<string>("all");
+
+  const tasks = s.checklist ?? [];
+  const doneSet = new Set(s.today_item_ids ?? []);
+  const doneCount = tasks.filter((t) => doneSet.has(t.id)).length;
+
+  const catMap = new Map(
+    (cats.data?.categories ?? []).map((c) => [c.id, c]),
+  );
+  const presentCats: string[] = [];
+  for (const t of tasks) {
+    if (t.category_id && !presentCats.includes(t.category_id))
+      presentCats.push(t.category_id);
+  }
+
+  const visible =
+    filter === "all" ? tasks : tasks.filter((t) => t.category_id === filter);
+
+  const toggle = (item: QuestItemRow) => {
+    if (doneSet.has(item.id) || log.isPending) return;
+    log.mutate(
+      { kind: "items", itemIds: [item.id], today: localToday() },
+      { onSuccess: (res) => celebrate(res, item.label) },
+    );
+  };
+
+  return (
+    <Card accent={s.category?.color}>
+      <CardHeader s={s} />
+      <div className="mb-3 flex items-center justify-between text-xs">
+        <span className="text-faint">
+          {doneCount}/{tasks.length} done today
+        </span>
+        <span className="font-bold text-accent">
+          {tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0}%
+        </span>
+      </div>
+
+      {presentCats.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <FilterChip on={filter === "all"} onClick={() => setFilter("all")}>
+            All
+          </FilterChip>
+          {presentCats.map((cid) => {
+            const c = catMap.get(cid);
+            return (
+              <FilterChip
+                key={cid}
+                on={filter === cid}
+                onClick={() => setFilter(cid)}
+              >
+                {c ? `${c.icon} ${c.name}` : "Other"}
+              </FilterChip>
+            );
+          })}
+        </div>
+      )}
+
+      <ul className="space-y-1.5">
+        {visible.map((item) => {
+          const done = doneSet.has(item.id);
+          const c = item.category_id ? catMap.get(item.category_id) : null;
+          return (
+            <li key={item.id}>
+              <button
+                onClick={() => toggle(item)}
+                disabled={done || log.isPending}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition ${
+                  done
+                    ? "text-faint line-through"
+                    : "bg-surface-2 text-fg hover:bg-elevated"
+                }`}
+              >
+                <span
+                  className={`grid h-5 w-5 shrink-0 place-items-center rounded-md text-xs ${
+                    done
+                      ? "gradient-accent text-on-accent"
+                      : "border border-border"
+                  }`}
+                >
+                  {done ? "✓" : ""}
+                </span>
+                <span className="flex-1 truncate">{item.label}</span>
+                {c && <span className="text-[11px]">{c.icon}</span>}
+                {item.difficulty && <DiffDot d={item.difficulty} />}
+              </button>
+            </li>
+          );
+        })}
+        {visible.length === 0 && (
+          <li className="px-1 text-sm text-faint">No tasks here.</li>
+        )}
+      </ul>
+    </Card>
+  );
+}
+
 // ── Target ──────────────────────────────────────────────────────────────────
 const PACE_LABEL: Record<string, { text: string; cls: string }> = {
   ahead: { text: "Ahead of pace", cls: "bg-success/15 text-success" },
@@ -228,6 +354,19 @@ function TargetCard({ s }: { s: QuestSummary }) {
           <div className="mt-1 text-xs text-faint">
             {p?.pace_per_week ?? "—"}/week target · {p?.percent ?? 0}%
           </div>
+          {s.streak && (s.streak.current > 0 || s.streak.freezes > 0) && (
+            <div className="mt-1 flex items-center gap-2 text-xs">
+              <span className="font-extrabold text-flame">
+                🔥 {s.streak.current}
+              </span>
+              <span className="text-faint">
+                day streak · best {s.streak.longest}
+              </span>
+              {s.streak.freezes > 0 && (
+                <span className="text-info">❄️ {s.streak.freezes}</span>
+              )}
+            </div>
+          )}
           <button
             onClick={() => setOpen((v) => !v)}
             className="mt-2.5 rounded-xl gradient-accent px-3.5 py-2 text-xs font-bold text-on-accent shadow-md shadow-accent/30 hover:brightness-110"
@@ -263,7 +402,14 @@ function TargetCard({ s }: { s: QuestSummary }) {
                 <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md border border-border text-[10px]">
                   {isContest ? "🏆" : ""}
                 </span>
-                <span className="flex-1 truncate">{item.label}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{item.label}</span>
+                  {!isContest && (item.topic || item.pattern) && (
+                    <span className="block truncate text-[10px] font-normal text-faint">
+                      {[item.topic, item.pattern].filter(Boolean).join(" · ")}
+                    </span>
+                  )}
+                </span>
                 {item.difficulty && <DiffDot d={item.difficulty} />}
               </button>
             );
@@ -301,11 +447,13 @@ function TargetLogPanel({
   const items = (detail.data?.quest.items ?? []).filter(
     (i) => !i.is_done && (i.kind === "problem" || i.kind === "custom"),
   );
+  const q = search.toLowerCase();
   const filtered = search
     ? items.filter(
         (i) =>
-          i.label.toLowerCase().includes(search.toLowerCase()) ||
-          (i.topic ?? "").toLowerCase().includes(search.toLowerCase()),
+          i.label.toLowerCase().includes(q) ||
+          (i.topic ?? "").toLowerCase().includes(q) ||
+          (i.pattern ?? "").toLowerCase().includes(q),
       )
     : items;
 
@@ -415,7 +563,14 @@ function TargetLogPanel({
                 >
                   {on ? "✓" : ""}
                 </span>
-                <span className="flex-1 truncate text-fg">{item.label}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-fg">{item.label}</span>
+                  {(item.topic || item.pattern) && (
+                    <span className="block truncate text-[10px] text-faint">
+                      {[item.topic, item.pattern].filter(Boolean).join(" · ")}
+                    </span>
+                  )}
+                </span>
                 {item.difficulty && <DiffDot d={item.difficulty} />}
               </button>
             );

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useToday } from "@/lib/query/hooks";
 import { useDelight } from "@/components/Delight";
 import { QuestCard } from "@/components/QuestCard";
@@ -27,7 +28,7 @@ export default function TodayPage() {
           {data && <p className="mt-0.5 text-sm text-muted">{data.greeting}</p>}
 
           {data && (
-            <div className="mt-5">
+            <Link href="/insights" className="mt-5 block">
               <div className="mb-1.5 flex items-end justify-between">
                 <span className="flex items-baseline gap-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-faint">
@@ -44,9 +45,9 @@ export default function TodayPage() {
               <LevelBar value={data.level.progress} />
               <div className="mt-1 flex justify-between text-[11px] text-faint">
                 <span>{data.lifetime_xp} XP total</span>
-                <span>{data.level.toNext} to Lv {data.level.level + 1}</span>
+                <span className="text-accent">View insights →</span>
               </div>
-            </div>
+            </Link>
           )}
         </div>
       </header>

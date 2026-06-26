@@ -82,6 +82,26 @@ export function useArchive() {
   return useQuery({ queryKey: qk.archive, queryFn: () => api.archive(today) });
 }
 
+export function useBadges() {
+  return useQuery({ queryKey: ["badges"], queryFn: () => api.badges() });
+}
+
+export function useInsights() {
+  const today = localToday();
+  return useQuery({
+    queryKey: ["insights", today],
+    queryFn: () => api.insights(today),
+  });
+}
+
+export function useMonthInsights(month: string) {
+  return useQuery({
+    queryKey: ["insights-month", month],
+    queryFn: () => api.monthInsights(month),
+    enabled: !!month,
+  });
+}
+
 /** Invalidate everything that a log/quest change can affect. */
 function useInvalidateAll() {
   const qc = useQueryClient();
@@ -92,6 +112,8 @@ function useInvalidateAll() {
     qc.invalidateQueries({ queryKey: ["calendar"] });
     qc.invalidateQueries({ queryKey: ["archive"] });
     qc.invalidateQueries({ queryKey: ["categories"] });
+    qc.invalidateQueries({ queryKey: ["badges"] });
+    qc.invalidateQueries({ queryKey: ["insights"] });
   };
 }
 

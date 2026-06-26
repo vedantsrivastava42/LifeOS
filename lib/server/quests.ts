@@ -164,6 +164,7 @@ export async function createQuest(
       rest_days: s.rest_days,
       freezes_max: s.freezes_max,
       freezes_available: s.freezes_available,
+      ...(s.tick_xp != null ? { tick_xp: s.tick_xp } : {}),
     };
   }
 
@@ -240,14 +241,32 @@ export async function createQuest(
     }
   }
 
-  // Milestone checklist.
+  // Milestone checklist (each step can carry a custom XP reward).
   if (input.type === "milestone" && input.milestone_items?.length) {
-    for (const label of input.milestone_items) {
+    for (const m of input.milestone_items) {
       items.push({
         user_id: userId,
         quest_id: quest.id,
-        label,
+        label: m.label,
         kind: "checklist",
+        xp_value: m.xp ?? null,
+        order_index: order++,
+      });
+    }
+  }
+
+  // Daily recurring tasks: templates that reset each day. Completion is tracked
+  // per-day in day_logs.item_ids (is_done stays false — they never "finish").
+  if (input.type === "daily" && input.daily_items?.length) {
+    for (const t of input.daily_items) {
+      items.push({
+        user_id: userId,
+        quest_id: quest.id,
+        label: t.label,
+        kind: "daily",
+        category_id: t.category_id ?? null,
+        difficulty: t.difficulty ?? null,
+        xp_value: t.xp ?? null,
         order_index: order++,
       });
     }
@@ -380,30 +399,17 @@ export async function rescheduleQuest(
 
 export type CategoryLite = Pick<CategoryRow, "id" | "name" | "icon" | "color">;
 
-/** Build the computed summary for one quest (used by Today, list, detail). */
-export async function summarizeQuest(
-  supabase: SupabaseClient,
+/** Pure summary assembly from already-loaded data (no DB calls). */
+function buildSummary(
   quest: QuestRow,
   category: CategoryLite | null,
+  items: QuestItemRow[],
+  logDates: DateStr[],
+  xp_total: number,
+  today_xp: number,
+  todayItemIds: string[],
   today: DateStr,
-): Promise<{ summary: QuestSummary; items: QuestItemRow[]; logDates: DateStr[] }> {
-  const { data: itemsData } = await supabase
-    .from("quest_items")
-    .select("*")
-    .eq("quest_id", quest.id)
-    .order("order_index", { ascending: true });
-  const items = (itemsData ?? []) as QuestItemRow[];
-
-  const logDates = await getLogDates(supabase, quest.id);
-  const [xp_total, today_xp] = await Promise.all([
-    questXpTotal(supabase, quest.id),
-    questTodayXp(supabase, quest.id, today),
-  ]);
-
-  const today_logged = logDates.includes(today);
-  const rest_today = isRestToday(quest, today);
-  const open_items = items.filter((i) => !i.is_done).length;
-
+): QuestSummary {
   const summary: QuestSummary = {
     id: quest.id,
     name: quest.name,
@@ -414,10 +420,11 @@ export async function summarizeQuest(
     category,
     xp_total,
     today_xp,
-    today_logged,
-    rest_today,
+    today_logged: logDates.includes(today),
+    rest_today: isRestToday(quest, today),
     due_today: [],
-    open_items,
+    today_item_ids: todayItemIds,
+    open_items: items.filter((i) => !i.is_done).length,
   };
 
   if (quest.type === "streak") {
@@ -425,16 +432,135 @@ export async function summarizeQuest(
   } else if (quest.type === "target") {
     const done = countDone(items, ["problem", "custom"]);
     summary.progress = targetProgress(quest, done, today);
+    // Freeze-protected daily streak (same engine as streak quests).
+    summary.streak = toStreakView(liveStreak(quest, logDates, today));
     // Everything scheduled for today (assigned problems + contests), undone.
-    summary.due_today = items.filter(
-      (i) => i.due_date === today && !i.is_done,
-    );
+    summary.due_today = items.filter((i) => i.due_date === today && !i.is_done);
   } else if (quest.type === "milestone") {
     summary.checklist = items;
     summary.due_today = items.filter((i) => !i.is_done);
+  } else if (quest.type === "daily") {
+    // Recurring tasks: "done today" = id in today's log, not is_done.
+    const doneToday = new Set(todayItemIds);
+    summary.checklist = items;
+    summary.due_today = items.filter((i) => !doneToday.has(i.id));
+    summary.open_items = summary.due_today.length;
   }
 
+  return summary;
+}
+
+/** Build the computed summary for one quest (used by the detail route). */
+export async function summarizeQuest(
+  supabase: SupabaseClient,
+  quest: QuestRow,
+  category: CategoryLite | null,
+  today: DateStr,
+): Promise<{ summary: QuestSummary; items: QuestItemRow[]; logDates: DateStr[] }> {
+  const [itemsRes, logDates, xp_total, today_xp, todayLogRes] = await Promise.all([
+    supabase
+      .from("quest_items")
+      .select("*")
+      .eq("quest_id", quest.id)
+      .order("order_index", { ascending: true }),
+    getLogDates(supabase, quest.id),
+    questXpTotal(supabase, quest.id),
+    questTodayXp(supabase, quest.id, today),
+    supabase
+      .from("day_logs")
+      .select("item_ids")
+      .eq("quest_id", quest.id)
+      .eq("log_date", today)
+      .maybeSingle(),
+  ]);
+  const items = (itemsRes.data ?? []) as QuestItemRow[];
+  const todayItemIds = (todayLogRes.data?.item_ids as string[]) ?? [];
+
+  const summary = buildSummary(
+    quest,
+    category,
+    items,
+    logDates,
+    xp_total,
+    today_xp,
+    todayItemIds,
+    today,
+  );
   return { summary, items, logDates };
+}
+
+/**
+ * Batched summary for a *list* of quests. Loads all items, logs, and XP in
+ * three queries total (via `.in(quest_id, …)`) instead of ~3 round-trips per
+ * quest — the big win for the Today and Quests screens.
+ */
+export async function summarizeQuests(
+  supabase: SupabaseClient,
+  quests: QuestRow[],
+  catMap: Map<string, CategoryLite>,
+  today: DateStr,
+): Promise<QuestSummary[]> {
+  if (quests.length === 0) return [];
+  const ids = quests.map((q) => q.id);
+
+  const [itemsRes, logsRes, xpRes] = await Promise.all([
+    supabase
+      .from("quest_items")
+      .select("*")
+      .in("quest_id", ids)
+      .order("order_index", { ascending: true }),
+    supabase
+      .from("day_logs")
+      .select("quest_id, log_date, item_ids")
+      .in("quest_id", ids),
+    supabase
+      .from("xp_events")
+      .select("quest_id, event_date, amount")
+      .in("quest_id", ids),
+  ]);
+
+  const itemsByQuest = new Map<string, QuestItemRow[]>();
+  for (const it of (itemsRes.data ?? []) as QuestItemRow[]) {
+    const arr = itemsByQuest.get(it.quest_id);
+    if (arr) arr.push(it);
+    else itemsByQuest.set(it.quest_id, [it]);
+  }
+
+  const logsByQuest = new Map<string, DateStr[]>();
+  const todayItemsByQuest = new Map<string, string[]>();
+  for (const l of logsRes.data ?? []) {
+    const qid = l.quest_id as string;
+    const arr = logsByQuest.get(qid);
+    if (arr) arr.push(l.log_date as string);
+    else logsByQuest.set(qid, [l.log_date as string]);
+    if ((l.log_date as string) === today) {
+      todayItemsByQuest.set(qid, (l.item_ids as string[]) ?? []);
+    }
+  }
+
+  const xpTotalByQuest = new Map<string, number>();
+  const xpTodayByQuest = new Map<string, number>();
+  for (const e of xpRes.data ?? []) {
+    const qid = e.quest_id as string;
+    const amt = e.amount as number;
+    xpTotalByQuest.set(qid, (xpTotalByQuest.get(qid) ?? 0) + amt);
+    if ((e.event_date as string) === today) {
+      xpTodayByQuest.set(qid, (xpTodayByQuest.get(qid) ?? 0) + amt);
+    }
+  }
+
+  return quests.map((quest) =>
+    buildSummary(
+      quest,
+      catMap.get(quest.category_id ?? "") ?? null,
+      itemsByQuest.get(quest.id) ?? [],
+      logsByQuest.get(quest.id) ?? [],
+      xpTotalByQuest.get(quest.id) ?? 0,
+      xpTodayByQuest.get(quest.id) ?? 0,
+      todayItemsByQuest.get(quest.id) ?? [],
+      today,
+    ),
+  );
 }
 
 /** Map of categoryId → lite category, including global presets. */

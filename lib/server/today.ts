@@ -2,8 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { QuestRow } from "@/lib/domain/types";
 import type { TodayResponse } from "@/lib/api/types";
 import { weekdayLabel, weekdayOf, type DateStr } from "@/lib/domain/dates";
-import { levelFromXp, lifetimeXp } from "@/lib/server/compute";
-import { loadCategoryMap, summarizeQuest } from "@/lib/server/quests";
+import { levelFromXp } from "@/lib/server/compute";
+import { loadCategoryMap, summarizeQuests } from "@/lib/server/quests";
 
 function greetingFor(today: DateStr): string {
   const phrases = [
@@ -23,39 +23,30 @@ export async function buildToday(
   userId: string,
   today: DateStr,
 ): Promise<TodayResponse> {
-  const { data: questRows } = await supabase
-    .from("quests")
-    .select("*")
-    .eq("status", "active")
-    .lte("start_date", today)
-    .order("created_at", { ascending: true });
+  // Active quests, category map, and the user's full XP ledger are all
+  // independent → fetch in parallel. (XP read once covers both lifetime and
+  // today's total, instead of two separate queries.)
+  const [questRows, catMap, xpRes] = await Promise.all([
+    supabase
+      .from("quests")
+      .select("*")
+      .eq("status", "active")
+      .lte("start_date", today)
+      .order("created_at", { ascending: true }),
+    loadCategoryMap(supabase),
+    supabase.from("xp_events").select("amount, event_date").eq("user_id", userId),
+  ]);
 
-  const quests = (questRows ?? []) as QuestRow[];
-  const catMap = await loadCategoryMap(supabase);
+  const quests = (questRows.data ?? []) as QuestRow[];
+  const summaries = await summarizeQuests(supabase, quests, catMap, today);
 
-  const summaries = await Promise.all(
-    quests.map(async (q) => {
-      const { summary } = await summarizeQuest(
-        supabase,
-        q,
-        catMap.get(q.category_id ?? "") ?? null,
-        today,
-      );
-      return summary;
-    }),
-  );
-
-  const { data: todayRows } = await supabase
-    .from("xp_events")
-    .select("amount")
-    .eq("user_id", userId)
-    .eq("event_date", today);
-  const total_today_xp = (todayRows ?? []).reduce(
-    (s, r) => s + (r.amount as number),
-    0,
-  );
-
-  const lifetime = await lifetimeXp(supabase, userId);
+  let lifetime = 0;
+  let total_today_xp = 0;
+  for (const r of xpRes.data ?? []) {
+    const amt = r.amount as number;
+    lifetime += amt;
+    if ((r.event_date as string) === today) total_today_xp += amt;
+  }
 
   return {
     date: today,

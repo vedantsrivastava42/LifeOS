@@ -76,6 +76,11 @@ export async function logDay(
   const scorables: ScorableItem[] = [];
   const completedItemIds: string[] = [];
 
+  // Daily tasks reset each day: completion is per-day (tracked in the day_log's
+  // item_ids), never the permanent is_done flag.
+  const isDaily = quest.type === "daily";
+  const alreadyToday = new Set<string>(existingLog?.item_ids ?? []);
+
   if (input.kind === "items") {
     if (input.itemIds?.length) {
       const { data: existItems } = await supabase
@@ -86,12 +91,23 @@ export async function logDay(
       const toComplete: string[] = [];
       for (const it of (existItems ?? []) as QuestItemRow[]) {
         completedItemIds.push(it.id);
-        if (!it.is_done) {
+        if (isDaily) {
+          // Award XP once per day; don't permanently complete the task.
+          if (!alreadyToday.has(it.id)) {
+            scorables.push({
+              kind: it.kind,
+              difficulty: it.difficulty,
+              label: it.label,
+              xpOverride: it.xp_value,
+            });
+          }
+        } else if (!it.is_done) {
           // Only newly-completed items earn XP (no double-dipping).
           scorables.push({
             kind: it.kind,
             difficulty: it.difficulty,
             label: it.label,
+            xpOverride: it.xp_value,
           });
           toComplete.push(it.id);
         }
@@ -177,7 +193,10 @@ export async function logDay(
   const prevFreezes =
     prevStreak?.freezes_available ??
     (isStreakConfig(quest.config) ? quest.config.freezes_available : 0);
-  const freeze_earned = streakRes.freezes_available > prevFreezes;
+  // Freezes apply to streak AND target quests (both run the streak engine).
+  const usesStreak = quest.type === "streak" || quest.type === "target";
+  const freeze_earned =
+    usesStreak && streakRes.freezes_available > prevFreezes;
 
   await supabase.from("streak_state").upsert(
     {
@@ -195,14 +214,18 @@ export async function logDay(
   );
 
   // Score XP. Streak bonus uses the quest's consecutive-day count.
-  const streakForBonus =
-    quest.type === "streak"
-      ? streakRes.current_streak
-      : simpleConsecutive(logDates, logDate);
+  const streakForBonus = usesStreak
+    ? streakRes.current_streak
+    : simpleConsecutive(logDates, logDate);
+
+  const tickBase =
+    isStreakConfig(quest.config) && quest.config.tick_xp != null
+      ? quest.config.tick_xp
+      : undefined;
 
   let drafts: XpEventDraft[] = [];
   if (input.kind === "tick") {
-    if (!existingLog) drafts = [scoreTick(streakForBonus)];
+    if (!existingLog) drafts = [scoreTick(streakForBonus, tickBase)];
   } else if (input.kind === "items") {
     if (scorables.length) {
       drafts = scoreItems(scorables, startIndex, streakForBonus).events;
@@ -256,7 +279,7 @@ export async function logDay(
     lifetime_xp: lifetimeAfter,
     level: levelAfter,
     leveled_up: levelAfter.level > levelBefore.level,
-    streak: quest.type === "streak" ? toStreakView(streakRes) : undefined,
+    streak: usesStreak ? toStreakView(streakRes) : undefined,
     freeze_earned,
     message,
   };
