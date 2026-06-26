@@ -2,14 +2,13 @@
 
 import Link from "next/link";
 import { useToday } from "@/lib/query/hooks";
-import { useDelight } from "@/components/Delight";
 import { QuestCard } from "@/components/QuestCard";
+import { AiLogBox } from "@/components/AiLogBox";
 import { EmptyState, LevelBar, LinkButton, Spinner } from "@/components/ui";
 import { format } from "date-fns";
 
 export default function TodayPage() {
   const { data, isLoading, isError, error } = useToday();
-  const { notify } = useDelight();
   const welcomeBack = data?.quests.some((q) => q.streak?.needs_welcome_back);
 
   return (
@@ -62,24 +61,8 @@ export default function TodayPage() {
         </div>
       )}
 
-      {/* NL logging (AI) — Phase 2 placeholder */}
-      <button
-        onClick={() =>
-          notify({
-            title: "AI auto-log is coming",
-            sub: "For now, tap a quest below to log",
-            icon: "🪄",
-            tone: "calm",
-          })
-        }
-        className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-border bg-surface/40 px-4 py-3 text-left text-sm text-faint transition hover:text-muted"
-      >
-        <span className="text-lg">✍️</span>
-        What did you do today?
-        <span className="ml-auto rounded-full bg-surface-2 px-2 py-0.5 text-[10px] uppercase tracking-wide">
-          soon
-        </span>
-      </button>
+      {/* AI natural-language logging */}
+      <AiLogBox />
 
       {isLoading && (
         <div className="flex justify-center py-16">

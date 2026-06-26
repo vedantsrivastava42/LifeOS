@@ -16,7 +16,13 @@ export const uuidish = z
     "Invalid id",
   );
 export const difficulty = z.enum(["easy", "medium", "hard"]);
-export const questItemKind = z.enum(["problem", "contest", "checklist", "custom"]);
+export const questItemKind = z.enum([
+  "problem",
+  "contest",
+  "checklist",
+  "custom",
+  "daily",
+]);
 
 export const createQuestSchema = z
   .object({

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  useAiCreateQuest,
   useCategories,
   useCreateQuest,
   useSheet,
@@ -57,6 +58,14 @@ export default function NewQuestPage() {
   const cats = useCategories();
   const sheets = useSheets();
   const create = useCreateQuest();
+  const aiQ = useAiCreateQuest();
+  const [aiPrompt, setAiPrompt] = useState("");
+
+  const aiCreate = () => {
+    const p = aiPrompt.trim();
+    if (!p || aiQ.isPending) return;
+    aiQ.mutate(p, { onSuccess: (res) => router.push(`/quests/${res.id}`) });
+  };
 
   const [type, setType] = useState<QuestType>("streak");
   const [name, setName] = useState("");
@@ -235,6 +244,31 @@ export default function NewQuestPage() {
         </button>
         <h1 className="text-2xl font-bold tracking-tight">New quest</h1>
       </header>
+
+      {/* Create with AI */}
+      <Card className="space-y-2">
+        <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-faint">
+          <span className="text-sm">✨</span> Create with AI
+        </div>
+        <textarea
+          value={aiPrompt}
+          onChange={(e) => setAiPrompt(e.target.value)}
+          placeholder="Describe it… e.g. “Finish Striver A-Z, about 30 problems a week” or “Gym 5 days a week, rest weekends”"
+          rows={2}
+          className="input resize-none"
+        />
+        <div className="flex items-center gap-2">
+          <Button onClick={aiCreate} disabled={aiQ.isPending || !aiPrompt.trim()}>
+            {aiQ.isPending ? "Thinking…" : "Generate quest"}
+          </Button>
+          <span className="text-xs text-faint">or fill it in manually below</span>
+        </div>
+        {aiQ.isError && (
+          <p className="text-sm text-red-400">
+            {(aiQ.error as Error)?.message ?? "Couldn't generate that"}
+          </p>
+        )}
+      </Card>
 
       {/* Type */}
       <div className="grid grid-cols-1 gap-2">

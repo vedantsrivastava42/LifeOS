@@ -144,6 +144,24 @@ export function usePatchQuest() {
   });
 }
 
+export function useAiLog() {
+  const invalidate = useInvalidateAll();
+  const today = localToday();
+  return useMutation({
+    mutationFn: (text: string) => api.aiLog(text, today),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAiCreateQuest() {
+  const invalidate = useInvalidateAll();
+  const today = localToday();
+  return useMutation({
+    mutationFn: (prompt: string) => api.aiCreateQuest(prompt, today),
+    onSuccess: invalidate,
+  });
+}
+
 export function useRescheduleQuest(id: string) {
   const invalidate = useInvalidateAll();
   const today = localToday();

@@ -177,3 +177,9 @@ export interface MonthInsightsResponse {
   total: number;
   days: ActivityDay[]; // every active day in the month (newest → oldest)
 }
+
+export interface AiLogResponse {
+  logged: { quest: string; xp: number; detail: string }[];
+  unmatched: string[];
+  total_xp: number;
+}

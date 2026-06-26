@@ -11,6 +11,7 @@ import type {
 import type { SheetItemRow, SheetRow } from "@/lib/domain/types";
 import type { BadgeStats, BadgeStatus } from "@/lib/domain/badges";
 import type {
+  AiLogResponse,
   ArchiveEntry,
   CalendarResponse,
   CategoryView,
@@ -115,4 +116,16 @@ export const api = {
 
   monthInsights: (month: string) =>
     req<MonthInsightsResponse>(`/api/insights/month?month=${month}`),
+
+  aiLog: (text: string, today: string) =>
+    req<AiLogResponse>(`/api/ai/log?today=${today}`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+
+  aiCreateQuest: (prompt: string, today: string) =>
+    req<{ id: string }>(`/api/ai/quest?today=${today}`, {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+    }),
 };
